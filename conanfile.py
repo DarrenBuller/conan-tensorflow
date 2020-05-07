@@ -1,6 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""Conan recipe package for tensorflow
+"""
 from conans import ConanFile, tools
 import os
 import sys
+import shutil
+import itertools
 
 
 class TensorFlowConan(ConanFile):
@@ -19,7 +26,9 @@ class TensorFlowConan(ConanFile):
 
     def build_requirements(self):
         if not tools.which("bazel"):
-            self.build_requires("bazel_installer/0.25.2@bincrafters/stable")
+            self.build_requires("bazel_installer/0.25.2")
+        if not tools.which("java"):
+            self.build_requires("java_installer/9.0.0@bincrafters/stable")
 
     def config_options(self):
         if self.settings.os == 'Windows':
@@ -44,7 +53,7 @@ class TensorFlowConan(ConanFile):
             env_build["TF_NEED_MPI"] = '0'
             env_build["TF_DOWNLOAD_CLANG"] = '0'
             env_build["TF_SET_ANDROID_WORKSPACE"] = "0"
-            env_build["CC_OPT_FLAGS"] = "/arch:AVX" if self.settings.compiler == "Visual Studio" else "-march=native"
+            #env_build["CC_OPT_FLAGS"] = "/arch:AVX" if self.settings.compiler == "Visual Studio" else "-march=native"
             env_build["TF_CONFIGURE_IOS"] = "1" if self.settings.os == "iOS" else "0"
             with tools.environment_append(env_build):
                 self.run("python configure.py" if tools.os_info.is_windows else "./configure")
@@ -52,17 +61,50 @@ class TensorFlowConan(ConanFile):
                 target = {"Macos": "//tensorflow:libtensorflow_cc.dylib",
                           "Linux": "//tensorflow:libtensorflow_cc.so",
                           "Windows": "//tensorflow:libtensorflow_cc.dll"}.get(str(self.settings.os))
-                self.run("bazel build --config=opt --define=no_tensorflow_py_deps=true "
+                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
                          "%s --verbose_failures" % target)
-                self.run("bazel build --config=opt --define=no_tensorflow_py_deps=true "
+                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
                          "%s --verbose_failures" % "//tensorflow:install_headers")
+                target = {"Macos": "//tensorflow/lite:libtensorflowlite.dylib",
+                          "Linux": "//tensorflow/lite:libtensorflowlite.so",
+                          "Windows": "tensorflow/lite:libtensorflowlite.dll"}.get(str(self.settings.os))
+                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
+                         "%s --verbose_failures" % target)
+                
+
+    def packageLibs(self, src):
+        libs = itertools.chain(
+        self.copy("*.so", dst="lib", src=src, keep_path=False, symlinks=False),
+        self.copy("*.so.*", dst="lib", src=src, keep_path=False, symlinks=False),
+        self.copy("*.dll", dst="lib", src=src, keep_path=False, symlinks=False),
+        self.copy("*.dylib*", dst="lib", src=src, keep_path=False, symlinks=False))
+
+        # Conan bug?
+        # bazel produces libraries with r-x perms, and conan uses shutil.copy2 to perform all copies
+        # As result it preserves metadata, but internally it opens file for write, which results in error on second time you copy files
+        # So just make it 777
+        for lib in libs:
+            os.chmod(lib, 0o777)
 
     def package(self):
-        self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
-        self.copy(pattern="*.dll", dst="bin", src=self._source_subfolder, keep_path=False, symlinks=True)
-        self.copy(pattern="*.lib", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
-        self.copy(pattern="*.so*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
-        self.copy(pattern="*.dylib*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        #self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
+        #self.copy(pattern="*.dll", dst="bin", src=self._source_subfolder, keep_path=False, symlinks=True)
+        #self.copy(pattern="*.lib", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        #self.copy(pattern="*.so*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        #self.copy(pattern="*.dylib*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
 
+        lite_lib_dir = "{}/bazel-bin/tensorflow/lite/".format(self._source_subfolder)
+        inc_dir = "{}/tensorflow/lite/".format(self._source_subfolder )
+        lib_dir = "{}/bazel-bin/tensorflow".format(self._source_subfolder)
+
+        # Work-around to not fail copy below, as conan cannot handle multiple files with the same name
+        # and fails with PermissionError
+        shutil.rmtree("{}/libtensorflowlite.so.runfiles".format(lite_lib_dir), True)
+        shutil.rmtree("{}/delegates/gpu/libtensorflowlite_gpu_gl.so.runfiles".format(lite_lib_dir), True)
+
+        self.packageLibs(src=lib_dir)
+
+        self.copy("*.h", dst="include/tensorflow", src=inc_dir, keep_path=True, symlinks=True)
+        self.copy("*.hpp", dst="include/tensorflow", src=inc_dir, keep_path=True, symlinks=True)
     def package_info(self):
         self.cpp_info.libs = ["tensorflow"]
