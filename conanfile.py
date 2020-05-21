@@ -27,8 +27,10 @@ class TensorFlowConan(ConanFile):
     def build_requirements(self):
         if not tools.which("bazel"):
             self.build_requires("bazel_installer/0.25.2")
-        if not tools.which("java"):
-            self.build_requires("java_installer/9.0.0@bincrafters/stable")
+        if not (tools.which("java") and tools.which("javac")):
+            self.build_requires("java_installer/8.0.144@bincrafters/stable")
+        if tools.os_info.is_windows and "CONAN_BASH_PATH" not in os.environ:
+            self.build_requires("msys2_installer/latest@bincrafters/stable")
 
     def config_options(self):
         if self.settings.os == 'Windows':
@@ -53,23 +55,25 @@ class TensorFlowConan(ConanFile):
             env_build["TF_NEED_MPI"] = '0'
             env_build["TF_DOWNLOAD_CLANG"] = '0'
             env_build["TF_SET_ANDROID_WORKSPACE"] = "0"
-            #env_build["CC_OPT_FLAGS"] = "/arch:AVX" if self.settings.compiler == "Visual Studio" else "-march=native"
+            env_build["CC_OPT_FLAGS"] = "/arch:AVX" if self.settings.compiler == "Visual Studio" else "-march=native"
             env_build["TF_CONFIGURE_IOS"] = "1" if self.settings.os == "iOS" else "0"
+            tools.run_in_windows_bash(self, "./tensorflow/contrib/makefile/download_dependencies.sh")
             with tools.environment_append(env_build):
                 self.run("python configure.py" if tools.os_info.is_windows else "./configure")
                 self.run("bazel shutdown")
                 target = {"Macos": "//tensorflow:libtensorflow_cc.dylib",
                           "Linux": "//tensorflow:libtensorflow_cc.so",
-                          "Windows": "//tensorflow:libtensorflow_cc.dll"}.get(str(self.settings.os))
-                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
-                         "%s --verbose_failures" % target)
-                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
-                         "%s --verbose_failures" % "//tensorflow:install_headers")
+                          "Windows": "//tensorflow:libtensorflow_cc.dylib"}.get(str(self.settings.os))
+                          # "Windows": "//tensorflow:libtensorflow_cc.dll"}.get(str(self.settings.os))
+                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --config=opt --define=no_tensorflow_py_deps=true """
+                         """%s --verbose_failures""" % target)
+                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true """
+                         """%s --verbose_failures""" % "//tensorflow:install_headers")
                 target = {"Macos": "//tensorflow/lite:libtensorflowlite.dylib",
                           "Linux": "//tensorflow/lite:libtensorflowlite.so",
                           "Windows": "tensorflow/lite:libtensorflowlite.dll"}.get(str(self.settings.os))
-                self.run("bazel build --cxxopt='-std=c++11' --config=opt --define=no_tensorflow_py_deps=true "
-                         "%s --verbose_failures" % target)
+                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --config=opt --define=no_tensorflow_py_deps=true """
+                         """%s --verbose_failures""" % target)
                 
 
     def packageLibs(self, src):
