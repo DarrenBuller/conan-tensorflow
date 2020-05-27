@@ -65,15 +65,12 @@ class TensorFlowConan(ConanFile):
                           "Linux": "//tensorflow:libtensorflow_cc.so",
                           "Windows": "//tensorflow:libtensorflow_cc.dylib"}.get(str(self.settings.os))
                           # "Windows": "//tensorflow:libtensorflow_cc.dll"}.get(str(self.settings.os))
-                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --config=opt --define=no_tensorflow_py_deps=true """
-                         """%s --verbose_failures""" % target)
-                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true """
-                         """%s --verbose_failures""" % "//tensorflow:install_headers")
+                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
+                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % "//tensorflow:install_headers")
                 target = {"Macos": "//tensorflow/lite:libtensorflowlite.dylib",
                           "Linux": "//tensorflow/lite:libtensorflowlite.so",
                           "Windows": "tensorflow/lite:libtensorflowlite.dll"}.get(str(self.settings.os))
-                self.run("""bazel --output_user_root=D:\\bazel\\output build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/SetOutputLocation -path D:\\vs_builds" --config=opt --define=no_tensorflow_py_deps=true """
-                         """%s --verbose_failures""" % target)
+                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
                 
 
     def packageLibs(self, src):
