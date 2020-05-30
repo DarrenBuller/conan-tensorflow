@@ -24,6 +24,18 @@ class TensorFlowConan(ConanFile):
     _source_subfolder = "source_subfolder"
     _build_subfolder = "build_subfolder"
 
+    requires = [
+        # exposes standalone, with_boost_regex & with_openssl options
+#        "eigen/3.3.7@conan/stable",
+#        "fmt/6.1.2",
+#        "librealuvc/8b22e5",  # locally published based on librealuvc git hash (currently)
+#        "opencv/4.1.1@conan/stable",
+#        "rapidjson/1.1.0@bincrafters/stable",
+#        "spdlog/2b326e", # locally published based on spd git hash (currently)
+#        "websocketpp/0.8.1@bincrafters/stable",
+        "protobuf/3.6.1@bincrafters/stable",
+    ]
+
     def build_requirements(self):
         if not tools.which("bazel"):
             self.build_requires("bazel_installer/0.25.2")
@@ -57,21 +69,27 @@ class TensorFlowConan(ConanFile):
             env_build["TF_SET_ANDROID_WORKSPACE"] = "0"
             env_build["CC_OPT_FLAGS"] = "/arch:AVX" if self.settings.compiler == "Visual Studio" else "-march=native"
             env_build["TF_CONFIGURE_IOS"] = "1" if self.settings.os == "iOS" else "0"
-            tools.run_in_windows_bash(self, "./tensorflow/contrib/makefile/download_dependencies.sh")
             with tools.environment_append(env_build):
-                self.run("python configure.py" if tools.os_info.is_windows else "./configure")
+                self.run(
+                    "python configure.py" if tools.os_info.is_windows else "./configure")
+                self.run("bazel shutdown")
+                if self.settings.os == "Windows":
+                    self.run("./tensorflow/contrib/makefile/download_dependencies.sh", win_bash=True)
+                else:
+                    self.run("./tensorflow/contrib/makefile/download_dependencies.sh")
                 self.run("bazel shutdown")
                 target = {"Macos": "//tensorflow:libtensorflow_cc.dylib",
                           "Linux": "//tensorflow:libtensorflow_cc.so",
                           "Windows": "//tensorflow:libtensorflow_cc.dylib"}.get(str(self.settings.os))
                           # "Windows": "//tensorflow:libtensorflow_cc.dll"}.get(str(self.settings.os))
-                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
-                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % "//tensorflow:install_headers")
-                target = {"Macos": "//tensorflow/lite:libtensorflowlite.dylib",
-                          "Linux": "//tensorflow/lite:libtensorflowlite.so",
-                          "Windows": "tensorflow/lite:libtensorflowlite.dll"}.get(str(self.settings.os))
-                self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
                 
+                if self.settings.os == "Windows":
+                    self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
+                    self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % "//tensorflow:install_headers")
+                else:
+                    self.run("""bazel build --cxxopt='-std=c++11' -c opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % target)
+                    self.run("""bazel build --cxxopt="/Zm50" --cxxopt="/Y-" --cxxopt="/Y-" --config=opt --define=no_tensorflow_py_deps=true %s --verbose_failures""" % "//tensorflow:install_headers")
+  
 
     def packageLibs(self, src):
         libs = itertools.chain(
@@ -88,24 +106,25 @@ class TensorFlowConan(ConanFile):
             os.chmod(lib, 0o777)
 
     def package(self):
-        #self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
-        #self.copy(pattern="*.dll", dst="bin", src=self._source_subfolder, keep_path=False, symlinks=True)
-        #self.copy(pattern="*.lib", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
-        #self.copy(pattern="*.so*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
-        #self.copy(pattern="*.dylib*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
-
-        lite_lib_dir = "{}/bazel-bin/tensorflow/lite/".format(self._source_subfolder)
-        inc_dir = "{}/tensorflow/lite/".format(self._source_subfolder )
+        # self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
+        # self.copy(pattern="*.dll", dst="bin", src=self._source_subfolder, keep_path=False, symlinks=True)
+        # self.copy(pattern="*.lib", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        # self.copy(pattern="*.so*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        # self.copy(pattern="*.dylib*", dst="lib", src=self._source_subfolder, keep_path=False, symlinks=True)
+        bin_inc_dir = "{}/bazel-out/k8-opt/bin/tensorflow/include/tensorflow/".format(self._source_subfolder )
+        host_inc_dir = "{}/bazel-out/host/bin/tensorflow/".format(self._source_subfolder )
         lib_dir = "{}/bazel-bin/tensorflow".format(self._source_subfolder)
 
-        # Work-around to not fail copy below, as conan cannot handle multiple files with the same name
-        # and fails with PermissionError
-        shutil.rmtree("{}/libtensorflowlite.so.runfiles".format(lite_lib_dir), True)
-        shutil.rmtree("{}/delegates/gpu/libtensorflowlite_gpu_gl.so.runfiles".format(lite_lib_dir), True)
+        # # Work-around to not fail copy below, as conan cannot handle multiple files with the same name
+        # # and fails with PermissionError
+        # shutil.rmtree("{}/libtensorflowlite.so.runfiles".format(lite_lib_dir), True)
+        # shutil.rmtree("{}/delegates/gpu/libtensorflowlite_gpu_gl.so.runfiles".format(lite_lib_dir), True)
 
         self.packageLibs(src=lib_dir)
 
-        self.copy("*.h", dst="include/tensorflow", src=inc_dir, keep_path=True, symlinks=True)
-        self.copy("*.hpp", dst="include/tensorflow", src=inc_dir, keep_path=True, symlinks=True)
+        self.copy("*.h", dst="include/tensorflow", src=bin_inc_dir, keep_path=True, symlinks=True)
+        self.copy("*.hpp", dst="include/tensorflow", src=bin_inc_dir, keep_path=True, symlinks=True)
+        self.copy("*.h", dst="include/tensorflow", src=host_inc_dir, keep_path=True, symlinks=True)
+        self.copy("*.hpp", dst="include/tensorflow", src=host_inc_dir, keep_path=True, symlinks=True)
     def package_info(self):
         self.cpp_info.libs = ["tensorflow"]
